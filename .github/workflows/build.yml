@@ -1,0 +1,319 @@
+
+name: Build WeiChat iOS App
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create SwiftUI project
+        run: |
+          mkdir -p Sources
+
+          cat > project.yml <<'EOF'
+          name: WeiChat
+          options:
+            bundleIdPrefix: com.example
+            deploymentTarget:
+              iOS: "17.0"
+          targets:
+            WeiChat:
+              type: application
+              platform: iOS
+              sources:
+                - Sources
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.example.wechat
+                  PRODUCT_NAME: 微聊
+                  SWIFT_VERSION: 5.0
+                  INFOPLIST_KEY_CFBundleDisplayName: 微聊
+                  TARGETED_DEVICE_FAMILY: "1"
+          EOF
+
+          cat > Sources/ContentView.swift <<'EOF'
+          import SwiftUI
+
+          struct Chat: Identifiable {
+              let id = UUID()
+              var name: String
+              var message: String
+          }
+
+          @main
+          struct WeiChatApp: App {
+              var body: some Scene {
+                  WindowGroup {
+                      ContentView()
+                  }
+              }
+          }
+
+          struct ContentView: View {
+              @State private var tab = 0
+              @State private var nickname = "我的微聊"
+              @State private var wechatID = "we-chat-2026"
+              @State private var balance = "10000.00"
+              @State private var chats = [
+                  Chat(name: "文件传输助手", message: "欢迎使用微聊"),
+                  Chat(name: "微聊团队", message: "你好，欢迎体验")
+              ]
+              @State private var moments = ["欢迎来到我的朋友圈"]
+              @State private var contacts = ["文件传输助手", "微聊团队"]
+
+              var body: some View {
+                  TabView(selection: $tab) {
+                      messages.tabItem {
+                          Label("微信", systemImage: "message")
+                      }.tag(0)
+
+                      addressBook.tabItem {
+                          Label("通讯录", systemImage: "person.crop.square")
+                      }.tag(1)
+
+                      discovery.tabItem {
+                          Label("发现", systemImage: "safari")
+                      }.tag(2)
+
+                      profile.tabItem {
+                          Label("我", systemImage: "person")
+                      }.tag(3)
+                  }
+                  .tint(.green)
+              }
+
+              var messages: some View {
+                  NavigationStack {
+                      List {
+                          ForEach(chats) { chat in
+                              NavigationLink {
+                                  ChatRoom(name: chat.name)
+                              } label: {
+                                  HStack(spacing: 12) {
+                                      Image(systemName: "person.crop.square.fill")
+                                          .font(.largeTitle)
+                                          .foregroundStyle(.green)
+                                      VStack(alignment: .leading) {
+                                          Text(chat.name)
+                                          Text(chat.message)
+                                              .font(.caption)
+                                              .foregroundStyle(.secondary)
+                                      }
+                                  }
+                              }
+                              .swipeActions {
+                                  Button(role: .destructive) {
+                                      chats.removeAll { $0.id == chat.id }
+                                  } label: {
+                                      Label("删除", systemImage: "trash")
+                                  }
+                              }
+                          }
+                      }
+                      .navigationTitle("微信")
+                      .toolbar {
+                          ToolbarItem(placement: .topBarTrailing) {
+                              Button {
+                                  let name = "新朋友\(contacts.count + 1)"
+                                  chats.insert(Chat(name: name, message: "新的聊天"), at: 0)
+                                  contacts.append(name)
+                              } label: {
+                                  Image(systemName: "plus.circle")
+                              }
+                          }
+                      }
+                  }
+              }
+
+              var addressBook: some View {
+                  NavigationStack {
+                      List {
+                          Section {
+                              Label("新的朋友", systemImage: "person.badge.plus")
+                              Label("群聊", systemImage: "person.2")
+                          }
+                          Section("联系人") {
+                              ForEach(contacts, id: \.self) { name in
+                                  Text(name)
+                              }
+                              .onDelete { contacts.remove(atOffsets: $0) }
+                          }
+                      }
+                      .navigationTitle("通讯录")
+                      .toolbar {
+                          EditButton()
+                      }
+                  }
+              }
+
+              var discovery: some View {
+                  NavigationStack {
+                      List {
+                          NavigationLink {
+                              MomentsView(moments: $moments)
+                          } label: {
+                              Label("朋友圈", systemImage: "photo")
+                          }
+                          Label("扫一扫（演示）", systemImage: "qrcode.viewfinder")
+                          Label("摇一摇（演示）", systemImage: "iphone.radiowaves.left.and.right")
+                          Label("看一看（演示）", systemImage: "safari")
+                          Label("搜一搜（演示）", systemImage: "magnifyingglass")
+                      }
+                      .navigationTitle("发现")
+                  }
+              }
+
+              var profile: some View {
+                  NavigationStack {
+                      List {
+                          Section {
+                              HStack(spacing: 16) {
+                                  Image(systemName: "person.crop.circle.fill")
+                                      .font(.system(size: 58))
+                                      .foregroundStyle(.green)
+                                  VStack(alignment: .leading) {
+                                      Text(nickname).font(.title2)
+                                      Text("微聊号：\(wechatID)")
+                                          .foregroundStyle(.secondary)
+                                  }
+                              }
+                              .padding(.vertical, 8)
+                          }
+
+                          Section {
+                              NavigationLink("个人资料") {
+                                  Form {
+                                      TextField("昵称", text: $nickname)
+                                      TextField("微聊号", text: $wechatID)
+                                  }
+                                  .navigationTitle("个人资料")
+                              }
+                              NavigationLink("服务") {
+                                  List {
+                                      Label("钱包", systemImage: "wallet.bifold")
+                                      Label("支付服务（演示）", systemImage: "creditcard")
+                                  }
+                                  .navigationTitle("服务")
+                              }
+                              NavigationLink("钱包") {
+                                  Form {
+                                      TextField("模拟余额", text: $balance)
+                                          .keyboardType(.decimalPad)
+                                      Text("此处金额仅为本地演示数据，不是真实资金。")
+                                          .font(.caption)
+                                          .foregroundStyle(.secondary)
+                                  }
+                                  .navigationTitle("钱包")
+                              }
+                          }
+                      }
+                      .navigationTitle("我")
+                  }
+              }
+          }
+
+          struct ChatRoom: View {
+              let name: String
+              @State private var input = ""
+              @State private var messages: [String] = []
+
+              var body: some View {
+                  VStack {
+                      ScrollView {
+                          ForEach(messages.indices, id: \.self) { index in
+                              HStack {
+                                  Spacer()
+                                  Text(messages[index])
+                                      .padding(10)
+                                      .background(.green.opacity(0.2))
+                                      .clipShape(RoundedRectangle(cornerRadius: 10))
+                              }
+                              .padding(.horizontal)
+                          }
+                      }
+
+                      HStack {
+                          TextField("发送消息", text: $input)
+                              .textFieldStyle(.roundedBorder)
+                          Button("发送") {
+                              guard !input.isEmpty else { return }
+                              messages.append(input)
+                              input = ""
+                          }
+                          .tint(.green)
+                      }
+                      .padding()
+                  }
+                  .navigationTitle(name)
+              }
+          }
+
+          struct MomentsView: View {
+              @Binding var moments: [String]
+              @State private var newPost = ""
+
+              var body: some View {
+                  List {
+                      Section {
+                          TextField("分享新动态", text: $newPost)
+                          Button("发布") {
+                              guard !newPost.isEmpty else { return }
+                              moments.insert(newPost, at: 0)
+                              newPost = ""
+                          }
+                      }
+                      Section("朋友圈") {
+                          ForEach(moments.indices, id: \.self) { index in
+                              Text(moments[index])
+                                  .swipeActions {
+                                      Button(role: .destructive) {
+                                          moments.remove(at: index)
+                                      } label: {
+                                          Label("删除", systemImage: "trash")
+                                      }
+                                  }
+                          }
+                      }
+                  }
+                  .navigationTitle("朋友圈")
+              }
+          }
+          EOF
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build iOS app
+        run: |
+          xcodebuild \
+            -project WeiChat.xcodeproj \
+            -scheme WeiChat \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned app
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/WeiChat.app Payload/
+          zip -r WeiChat-unsigned.ipa Payload
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeiChat-iOS-unsigned
+          path: WeiChat-unsigned.ipa
