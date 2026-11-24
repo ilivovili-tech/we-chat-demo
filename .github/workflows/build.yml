@@ -19,15 +19,23 @@ jobs:
         run: brew install xcodegen
 
       - name: Create SwiftUI project
+        shell: bash
         run: |
+          set -e
           mkdir -p Sources
 
           cat > project.yml <<'EOF'
           name: WeiChat
           options:
-            bundleIdPrefix: com.example
+            bundleIdPrefix: com.ilivovili
             deploymentTarget:
               iOS: "17.0"
+          settings:
+            base:
+              SWIFT_VERSION: 5.0
+              IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+              TARGETED_DEVICE_FAMILY: "1"
+              GENERATE_INFOPLIST_FILE: YES
           targets:
             WeiChat:
               type: application
@@ -36,18 +44,16 @@ jobs:
                 - Sources
               settings:
                 base:
-                  PRODUCT_BUNDLE_IDENTIFIER: com.example.wechat
-                  PRODUCT_NAME: 微聊
-                  SWIFT_VERSION: 5.0
+                  PRODUCT_BUNDLE_IDENTIFIER: com.ilivovili.wechatdemo
+                  PRODUCT_NAME: WeiChat
                   INFOPLIST_KEY_CFBundleDisplayName: 微聊
-                  TARGETED_DEVICE_FAMILY: "1"
           EOF
 
           cat > Sources/ContentView.swift <<'EOF'
           import SwiftUI
 
-          struct Chat: Identifiable {
-              let id = UUID()
+          struct ChatItem: Identifiable, Codable {
+              var id = UUID()
               var name: String
               var message: String
           }
@@ -62,39 +68,52 @@ jobs:
           }
 
           struct ContentView: View {
+              @AppStorage("nickname") private var nickname = "我的微聊"
+              @AppStorage("wechatID") private var wechatID = "we-chat-2026"
+              @AppStorage("balance") private var balance = "10000.00"
+              @AppStorage("posts") private var savedPosts = "欢迎来到我的朋友圈"
+              @AppStorage("contacts") private var savedContacts = "文件传输助手,微聊团队"
+
               @State private var tab = 0
-              @State private var nickname = "我的微聊"
-              @State private var wechatID = "we-chat-2026"
-              @State private var balance = "10000.00"
               @State private var chats = [
-                  Chat(name: "文件传输助手", message: "欢迎使用微聊"),
-                  Chat(name: "微聊团队", message: "你好，欢迎体验")
+                  ChatItem(name: "文件传输助手", message: "欢迎使用微聊"),
+                  ChatItem(name: "微聊团队", message: "你好，欢迎体验")
               ]
-              @State private var moments = ["欢迎来到我的朋友圈"]
-              @State private var contacts = ["文件传输助手", "微聊团队"]
+
+              var contacts: [String] {
+                  savedContacts.split(separator: ",").map(String.init)
+              }
+
+              var posts: [String] {
+                  savedPosts.components(separatedBy: "\n")
+              }
 
               var body: some View {
                   TabView(selection: $tab) {
-                      messages.tabItem {
-                          Label("微信", systemImage: "message")
-                      }.tag(0)
+                      chatPage
+                          .tabItem {
+                              Label("微信", systemImage: "message")
+                          }.tag(0)
 
-                      addressBook.tabItem {
-                          Label("通讯录", systemImage: "person.crop.square")
-                      }.tag(1)
+                      contactsPage
+                          .tabItem {
+                              Label("通讯录", systemImage: "person.crop.square")
+                          }.tag(1)
 
-                      discovery.tabItem {
-                          Label("发现", systemImage: "safari")
-                      }.tag(2)
+                      discoveryPage
+                          .tabItem {
+                              Label("发现", systemImage: "safari")
+                          }.tag(2)
 
-                      profile.tabItem {
-                          Label("我", systemImage: "person")
-                      }.tag(3)
+                      profilePage
+                          .tabItem {
+                              Label("我", systemImage: "person")
+                          }.tag(3)
                   }
                   .tint(.green)
               }
 
-              var messages: some View {
+              var chatPage: some View {
                   NavigationStack {
                       List {
                           ForEach(chats) { chat in
@@ -126,29 +145,44 @@ jobs:
                       .toolbar {
                           ToolbarItem(placement: .topBarTrailing) {
                               Button {
-                                  let name = "新朋友\(contacts.count + 1)"
-                                  chats.insert(Chat(name: name, message: "新的聊天"), at: 0)
-                                  contacts.append(name)
+                                  let name = "新朋友\(chats.count + 1)"
+                                  chats.insert(
+                                      ChatItem(name: name, message: "新的聊天"),
+                                      at: 0
+                                  )
                               } label: {
-                                  Image(systemName: "plus.circle")
+                                  Image(systemName: "plus")
                               }
                           }
                       }
                   }
               }
 
-              var addressBook: some View {
+              var contactsPage: some View {
                   NavigationStack {
                       List {
                           Section {
                               Label("新的朋友", systemImage: "person.badge.plus")
                               Label("群聊", systemImage: "person.2")
                           }
+
                           Section("联系人") {
                               ForEach(contacts, id: \.self) { name in
                                   Text(name)
                               }
-                              .onDelete { contacts.remove(atOffsets: $0) }
+                              .onDelete { offsets in
+                                  var list = contacts
+                                  list.remove(atOffsets: offsets)
+                                  savedContacts = list.joined(separator: ",")
+                              }
+                          }
+
+                          Section {
+                              Button("添加演示联系人") {
+                                  var list = contacts
+                                  list.append("新联系人\(list.count + 1)")
+                                  savedContacts = list.joined(separator: ",")
+                              }
                           }
                       }
                       .navigationTitle("通讯录")
@@ -158,14 +192,15 @@ jobs:
                   }
               }
 
-              var discovery: some View {
+              var discoveryPage: some View {
                   NavigationStack {
                       List {
                           NavigationLink {
-                              MomentsView(moments: $moments)
+                              MomentsView(savedPosts: $savedPosts)
                           } label: {
                               Label("朋友圈", systemImage: "photo")
                           }
+
                           Label("扫一扫（演示）", systemImage: "qrcode.viewfinder")
                           Label("摇一摇（演示）", systemImage: "iphone.radiowaves.left.and.right")
                           Label("看一看（演示）", systemImage: "safari")
@@ -175,7 +210,7 @@ jobs:
                   }
               }
 
-              var profile: some View {
+              var profilePage: some View {
                   NavigationStack {
                       List {
                           Section {
@@ -183,8 +218,10 @@ jobs:
                                   Image(systemName: "person.crop.circle.fill")
                                       .font(.system(size: 58))
                                       .foregroundStyle(.green)
+
                                   VStack(alignment: .leading) {
-                                      Text(nickname).font(.title2)
+                                      Text(nickname)
+                                          .font(.title2)
                                       Text("微聊号：\(wechatID)")
                                           .foregroundStyle(.secondary)
                                   }
@@ -200,6 +237,7 @@ jobs:
                                   }
                                   .navigationTitle("个人资料")
                               }
+
                               NavigationLink("服务") {
                                   List {
                                       Label("钱包", systemImage: "wallet.bifold")
@@ -207,11 +245,13 @@ jobs:
                                   }
                                   .navigationTitle("服务")
                               }
+
                               NavigationLink("钱包") {
                                   Form {
                                       TextField("模拟余额", text: $balance)
                                           .keyboardType(.decimalPad)
-                                      Text("此处金额仅为本地演示数据，不是真实资金。")
+
+                                      Text("这里是本地模拟金额，不是真实资金。")
                                           .font(.caption)
                                           .foregroundStyle(.secondary)
                                   }
@@ -226,6 +266,7 @@ jobs:
 
           struct ChatRoom: View {
               let name: String
+
               @State private var input = ""
               @State private var messages: [String] = []
 
@@ -247,8 +288,11 @@ jobs:
                       HStack {
                           TextField("发送消息", text: $input)
                               .textFieldStyle(.roundedBorder)
+
                           Button("发送") {
-                              guard !input.isEmpty else { return }
+                              guard !input.trimmingCharacters(in: .whitespaces).isEmpty else {
+                                  return
+                              }
                               messages.append(input)
                               input = ""
                           }
@@ -261,25 +305,38 @@ jobs:
           }
 
           struct MomentsView: View {
-              @Binding var moments: [String]
+              @Binding var savedPosts: String
               @State private var newPost = ""
+
+              var posts: [String] {
+                  savedPosts.isEmpty ? [] : savedPosts.components(separatedBy: "\n")
+              }
 
               var body: some View {
                   List {
                       Section {
                           TextField("分享新动态", text: $newPost)
+
                           Button("发布") {
-                              guard !newPost.isEmpty else { return }
-                              moments.insert(newPost, at: 0)
+                              guard !newPost.trimmingCharacters(in: .whitespaces).isEmpty else {
+                                  return
+                              }
+
+                              var list = posts
+                              list.insert(newPost, at: 0)
+                              savedPosts = list.joined(separator: "\n")
                               newPost = ""
                           }
                       }
+
                       Section("朋友圈") {
-                          ForEach(moments.indices, id: \.self) { index in
-                              Text(moments[index])
+                          ForEach(posts.indices, id: \.self) { index in
+                              Text(posts[index])
                                   .swipeActions {
                                       Button(role: .destructive) {
-                                          moments.remove(at: index)
+                                          var list = posts
+                                          list.remove(at: index)
+                                          savedPosts = list.joined(separator: "\n")
                                       } label: {
                                           Label("删除", systemImage: "trash")
                                       }
@@ -297,6 +354,7 @@ jobs:
 
       - name: Build iOS app
         run: |
+          set -e
           xcodebuild \
             -project WeiChat.xcodeproj \
             -scheme WeiChat \
@@ -306,14 +364,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Package unsigned app
+      - name: Package unsigned IPA
         run: |
-          mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/WeiChat.app Payload/
+          set -e
+          mkdir -p Payload
+          APP_PATH="build/Build/Products/Release-iphoneos/WeiChat.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: WeiChat.app not found"
+            find build -name "*.app" -print
+            exit 1
+          fi
+
+          cp -R "$APP_PATH" Payload/
           zip -r WeiChat-unsigned.ipa Payload
 
-      - name: Upload build
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: WeiChat-iOS-unsigned
           path: WeiChat-unsigned.ipa
+          if-no-files-found: error
